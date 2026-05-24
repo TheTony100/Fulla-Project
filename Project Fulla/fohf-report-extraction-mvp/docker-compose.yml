@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./app:/app/app
+      - ./configs:/app/configs
+      - ./data:/app/data
+    environment:
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false

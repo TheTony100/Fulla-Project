@@ -1,0 +1,105 @@
+# Regex-based monthly report extraction. Patterns are tried in order per field.
+# Each pattern may use named groups: value (preferred) or fall back to group 1.
+#
+# Code filters:
+# - manager_name: Excel-only in UI; YAML labels + page-1 layout + filename fallback (Python).
+# - monthly_net_return: skips matches on lines dominated by YTD unless MTD/monthly context exists.
+# - EVR-style decks: Class A + MTD row; AUM with $…M; fund title below report month (Python anchor).
+
+fields:
+  manager_name:
+    max_pages_head: 3
+    patterns:
+      - name: fund_name_label
+        regex: '(?im)^\s*Fund\s+Name\s*:\s*(.+?)\s*$'
+        confidence_base: 0.90
+      - name: strategy_or_vehicle_label
+        regex: '(?im)^\s*(?:Strategy\s+Name|Investment\s+Vehicle|Portfolio\s+Name)\s*:\s*(.+?)\s*$'
+        confidence_base: 0.86
+
+  report_month:
+    max_pages_head: 6
+    patterns:
+      - name: report_month_label_words
+        regex: '(?i)\b(?:Report\s+Month|Reporting\s+Month|Month\s+of\s+Report|Statement\s+Month)\s*[:\s]+\s*\b((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})\b'
+        confidence_base: 0.91
+      - name: report_month_label_abbr
+        regex: '(?i)\b(?:Report\s+Month|Reporting\s+Month)\s*[:\s]+\s*\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{4})\b'
+        confidence_base: 0.86
+      - name: month_year_words
+        regex: '(?i)\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b'
+        confidence_base: 0.82
+      - name: abbreviated_month_year
+        regex: '(?i)\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}\b'
+        confidence_base: 0.74
+      - name: iso_month
+        regex: '(?i)(?:as\s+of|period\s+ended|for\s+the\s+month\s+ended|month\s+ended)[^\n]{0,80}?(\d{4}-\d{2}-\d{2})'
+        confidence_base: 0.76
+      - name: mm_yyyy
+        regex: '\b(1[0-2]|0?[1-9])/(\d{4})\b'
+        confidence_base: 0.58
+
+  monthly_net_return:
+    max_pages_head: 15
+    patterns:
+      # EVR / similar: bind MTD to “Net Return - Class A” row (label-proximate).
+      - name: net_return_class_a_mtd_multiline
+        regex: '(?is)Net\s+Return\s*-\s*Class\s+A\s*\n[^\n]{0,120}?MTD[^\n\d]{0,50}?([-+]?\d+(?:\.\d+)?)\s*%'
+        confidence_base: 0.96
+      - name: net_return_class_a_mtd_inline
+        regex: '(?i)Net\s+Return\s*-\s*Class\s+A[^\n]{0,320}?MTD[^\n\d]{0,80}?([-+]?\d+(?:\.\d+)?)\s*%'
+        confidence_base: 0.95
+      - name: mtd_pct
+        regex: '(?i)\bMTD\b(?:(?!\bYTD\b)[^\n]){0,55}?([-+]?\d+(?:\.\d+)?)\s*%'
+        confidence_base: 0.93
+      - name: monthly_return_pct
+        regex: '(?i)\bMonthly\s+Return\b[^\n%]{0,55}?([-+]?\d+(?:\.\d+)?)\s*%'
+        confidence_base: 0.91
+      - name: month_to_date_pct
+        regex: '(?i)\bMonth\s+to\s+Date\b[^\n%]{0,55}?([-+]?\d+(?:\.\d+)?)\s*%'
+        confidence_base: 0.90
+      - name: monthly_net_pct
+        regex: '(?i)(?:monthly\s+net\s+(?:return|performance)|net\s+return\s+for\s+the\s+month)[^\n%]{0,60}?([-+]?\d+(?:\.\d+)?)\s*%'
+        confidence_base: 0.87
+      - name: performance_net_monthly
+        regex: '(?i)\bPerformance\b[^\n%]{0,45}?\b(?:Net|Monthly)\b[^\n%]{0,45}?([-+]?\d+(?:\.\d+)?)\s*%'
+        confidence_base: 0.72
+      - name: net_return_pct_line
+        regex: '(?i)(?<!\w)(?:Net\s+Return)\b[^\n%]{0,50}?([-+]?\d+(?:\.\d+)?)\s*%'
+        confidence_base: 0.68
+
+  ytd_return:
+    max_pages_head: 15
+    patterns:
+      - name: ytd_pct
+        regex: '(?i)\b(?:YTD|year[\s-]?to[\s-]?date)\b[^\n%]{0,50}?([-+]?\d+(?:\.\d+)?)\s*%'
+        confidence_base: 0.86
+      - name: ytd_return_label
+        regex: '(?i)(?:year\s+to\s+date\s+(?:return|performance))[^\n%]{0,40}?([-+]?\d+(?:\.\d+)?)\s*%'
+        confidence_base: 0.82
+
+  aum_or_nav:
+    max_pages_head: 15
+    patterns:
+      # Preserve currency + compact suffix ($224M)
+      - name: aum_nav_dollar_suffix_compact
+        regex: '(?i)\b(?:AUM|NAV)\b[^\n]{0,130}?(\$\s*[\d,]+(?:\.\d+)?\s*[MmBb])\b'
+        confidence_base: 0.93
+      - name: assets_under_management_dollar_suffix
+        regex: '(?i)\b(?:Assets\s+Under\s+Management)\b[^\n]{0,130}?(\$\s*[\d,]+(?:\.\d+)?\s*[MmBb])\b'
+        confidence_base: 0.91
+      - name: aum_label_money
+        regex: '(?i)\bAUM\b[^\n$]{0,90}?\$\s*([\d,]+(?:\.\d+)?(?:\s*(?:million|mn|m|billion|bn|b))?)\b'
+        confidence_base: 0.87
+      - name: nav_label_money
+        regex: '(?i)\bNAV\b[^\n$]{0,90}?\$\s*([\d,]+(?:\.\d+)?(?:\s*(?:million|mn|m|billion|bn|b))?)\b'
+        confidence_base: 0.86
+      - name: assets_under_management
+        regex: '(?i)\b(?:Assets\s+Under\s+Management)\b[^\n$]{0,90}?\$\s*([\d,]+(?:\.\d+)?(?:\s*(?:million|mn|m|billion|bn|b))?)\b'
+        confidence_base: 0.84
+      - name: net_asset_value_spelled
+        regex: '(?i)\b(?:Net\s+Asset\s+Value)\b[^\n$]{0,90}?\$\s*([\d,]+(?:\.\d+)?(?:\s*(?:million|mn|m|billion|bn|b))?)\b'
+        confidence_base: 0.84
+      - name: aum_plain_number
+        regex: '(?i)\b(?:AUM|NAV)\b[^\n\d]{0,45}?([\d,]{3,}(?:\.\d+)?)\b'
+        confidence_base: 0.52
