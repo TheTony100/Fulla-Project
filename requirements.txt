@@ -5,3 +5,4 @@ xlsxwriter
 pdfplumber
 pypdf
 python-dotenv
+PyMuPDF
